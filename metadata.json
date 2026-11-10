@@ -1,0 +1,6 @@
+{
+  "name": "TopoStudio 3D Pro",
+  "description": "Plataforma avanzada para gestionar, editar, analizar y exportar mapas y mallas topográficas 3D en tiempo real.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

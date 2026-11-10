@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Malla Topográfica 3D</title>
+    <!-- Tailwind CSS para diseño moderno y responsivo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fuente Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Three.js y OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Iconos Lucide -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        /* Personalización de sliders */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #38bdf8;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #334155;
+            border-radius: 2px;
+        }
+        /* Scrollbar discreta para panel móvil */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.5);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="select-none">
+
+    <!-- Contenedor del Lienzo 3D -->
+    <div id="canvas-container"></div>
+
+    <!-- Barra Superior / Título -->
+    <div class="fixed top-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+        <div class="bg-slate-900/85 backdrop-blur-md border border-slate-700/60 px-4 py-3 rounded-2xl shadow-xl pointer-events-auto flex items-center gap-3">
+            <div class="p-2 bg-sky-500/20 text-sky-400 rounded-xl">
+                <i data-lucide="mountain" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <h1 class="text-sm sm:text-base font-bold tracking-tight text-white">TopoGen 3D <span id="header-radius-badge" class="text-xs font-normal text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded-full ml-1">Radio 50 km</span></h1>
+                <p id="location-label" class="text-xs text-slate-400 truncate max-w-[200px] sm:max-w-xs">Cargando topografía...</p>
+            </div>
+        </div>
+
+        <!-- Botón de acción principal: Mi Ubicación -->
+        <div class="flex items-center gap-2 pointer-events-auto">
+            <button id="btn-locate" class="flex items-center gap-2 bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-slate-950 font-semibold px-4 py-3 rounded-2xl shadow-lg shadow-sky-500/20 transition-all text-xs sm:text-sm cursor-pointer">
+                <i data-lucide="locate-fixed" class="w-4 h-4"></i>
+                <span>Usar Mi Ubicación</span>
+            </button>
+            <button id="btn-toggle-panel" class="p-3 bg-slate-900/85 backdrop-blur-md border border-slate-700/60 hover:bg-slate-800 text-slate-200 rounded-2xl shadow-xl transition-all cursor-pointer" title="Mostrar/Ocultar Controles">
+                <i data-lucide="sliders-horizontal" class="w-5 h-5"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Panel de Control Lateral / Inferior -->
+    <div id="control-panel" class="fixed bottom-4 left-4 right-4 sm:left-auto sm:top-24 sm:bottom-auto sm:w-80 z-20 bg-slate-900/90 backdrop-blur-xl border border-slate-700/60 rounded-2xl p-4 shadow-2xl transition-all duration-300 max-h-[65vh] sm:max-h-[calc(100vh-7rem)] overflow-y-auto">
+        
+        <!-- Buscador por Ciudad / Lugar -->
+        <div class="mb-3 pb-3 border-b border-slate-800">
+            <label class="block text-xs font-medium text-slate-300 mb-1.5">Buscar Ciudad o Lugar</label>
+            <div class="flex gap-1.5">
+                <input type="text" id="input-search-city" placeholder="Ej: Mendoza, Bariloche, Córdoba..." class="flex-1 bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500">
+                <button id="btn-search-city" class="bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold px-3 py-1.5 rounded-xl text-xs transition-colors cursor-pointer flex items-center justify-center" title="Buscar ciudad">
+                    <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Búsqueda / Coordenadas Manuales -->
+        <div class="mb-4 pb-4 border-b border-slate-800">
+            <label class="block text-xs font-medium text-slate-400 mb-2">Coordenadas Exactas (o Ejemplos)</label>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <div>
+                    <span class="text-[10px] text-slate-500 block">Latitud</span>
+                    <input type="number" id="input-lat" step="0.0001" value="-31.4201" class="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500">
+                </div>
+                <div>
+                    <span class="text-[10px] text-slate-500 block">Longitud</span>
+                    <input type="number" id="input-lon" step="0.0001" value="-64.1888" class="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500">
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button id="btn-generate-coords" class="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium py-2 px-3 rounded-xl border border-slate-700 transition-colors cursor-pointer">
+                    Generar Zona
+                </button>
+                <select id="preset-locations" class="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-xl px-2 py-2 focus:outline-none cursor-pointer">
+                    <option value="">Ejemplos...</option>
+                    <option value="-31.4201,-64.1888">Córdoba (Sierras)</option>
+                    <option value="-32.6532,-70.0109">Aconcagua (Andes)</option>
+                    <option value="-32.8895,-68.8458">Mendoza Ciudad</option>
+                    <option value="-41.1335,-71.3103">Bariloche (Lagos)</option>
+                    <option value="-34.6037,-58.3816">Buenos Aires</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Ajustes de Malla -->
+        <div class="space-y-4">
+            <!-- Radio de la Zona (km) -->
+            <div>
+                <div class="flex justify-between text-xs mb-1">
+                    <span class="text-slate-300 font-medium">Radio de la Zona</span>
+                    <span id="val-radius" class="text-sky-400 font-mono">50 km</span>
+                </div>
+                <input type="range" id="slider-radius" min="5" max="150" step="5" value="50" class="w-full">
+            </div>
+
+            <!-- Exageración Vertical -->
+            <div>
+                <div class="flex justify-between text-xs mb-1">
+                    <span class="text-slate-300 font-medium">Exageración Vertical</span>
+                    <span id="val-exaggeration" class="text-sky-400 font-mono">2.5x</span>
+                </div>
+                <input type="range" id="slider-exaggeration" min="0.5" max="15" step="0.5" value="2.5" class="w-full">
+            </div>
+
+            <!-- Esquema de Color -->
+            <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1.5">Textura / Paleta Topográfica</label>
+                <div class="grid grid-cols-2 gap-1.5">
+                    <button data-palette="opentopomap" class="palette-btn active bg-sky-500/20 border-sky-500 text-sky-300 border rounded-lg py-1.5 text-[11px] font-medium cursor-pointer transition-all">OpenTopoMap</button>
+                    <button data-palette="hypsometric" class="palette-btn bg-slate-800/60 border-slate-700 text-slate-400 border rounded-lg py-1.5 text-[11px] font-medium cursor-pointer transition-all">Relieve</button>
+                    <button data-palette="cyber" class="palette-btn bg-slate-800/60 border-slate-700 text-slate-400 border rounded-lg py-1.5 text-[11px] font-medium cursor-pointer transition-all">Radar</button>
+                    <button data-palette="monochrome" class="palette-btn bg-slate-800/60 border-slate-700 text-slate-400 border rounded-lg py-1.5 text-[11px] font-medium cursor-pointer transition-all">Maqueta</button>
+                </div>
+            </div>
+
+            <!-- Opciones Visuales -->
+            <div class="flex items-center justify-between pt-1">
+                <span class="text-xs text-slate-300">Mostrar Líneas de Malla</span>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="toggle-wireframe" class="sr-only peer">
+                    <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+                </label>
+            </div>
+
+            <div class="flex items-center justify-between">
+                <span id="label-circular-toggle" class="text-xs text-slate-300">Recorte Circular (Radio 50km)</span>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="toggle-circular" class="sr-only peer" checked>
+                    <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+                </label>
+            </div>
+        </div>
+
+        <!-- Estadísticas de Elevación -->
+        <div class="mt-4 pt-3 border-t border-slate-800 grid grid-cols-3 gap-2 text-center">
+            <div class="bg-slate-800/50 rounded-xl p-2">
+                <span class="text-[10px] text-slate-400 block">Mínima</span>
+                <span id="stat-min" class="text-xs font-bold text-emerald-400">-- m</span>
+            </div>
+            <div class="bg-slate-800/50 rounded-xl p-2">
+                <span class="text-[10px] text-slate-400 block">Centro</span>
+                <span id="stat-center" class="text-xs font-bold text-sky-400">-- m</span>
+            </div>
+            <div class="bg-slate-800/50 rounded-xl p-2">
+                <span class="text-[10px] text-slate-400 block">Máxima</span>
+                <span id="stat-max" class="text-xs font-bold text-amber-400">-- m</span>
+            </div>
+        </div>
+
+        <!-- Botón de Exportar OBJ -->
+        <button id="btn-export-obj" class="mt-4 w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium py-2.5 px-4 rounded-xl transition-all cursor-pointer">
+            <i data-lucide="download" class="w-4 h-4"></i>
+            <span>Descargar Malla 3D (.OBJ)</span>
+        </button>
+    </div>
+
+    <!-- Indicador de Carga -->
+    <div id="status-overlay" class="fixed inset-0 z-30 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center hidden">
+        <div class="bg-slate-900 border border-slate-700 p-6 rounded-2xl shadow-2xl max-w-xs w-full text-center">
+            <div class="w-10 h-10 border-4 border-sky-500/30 border-t-sky-500 rounded-full animate-spin mx-auto mb-3"></div>
+            <h3 id="status-title" class="text-sm font-semibold text-white mb-1">Obteniendo Topografía</h3>
+            <p id="status-desc" class="text-xs text-slate-400">Recortando zona topográfica en 3D...</p>
+        </div>
+    </div>
+
+    <!-- Toast de Mensajes -->
+    <div id="toast-box" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-slate-800 border border-slate-600 text-white px-4 py-2.5 rounded-xl shadow-2xl text-xs font-medium flex items-center gap-2 transition-all opacity-0 pointer-events-none">
+        <i data-lucide="info" class="w-4 h-4 text-sky-400"></i>
+        <span id="toast-message">Mensaje</span>
+    </div>
+
+    <script>
+        // Inicializar iconos Lucide de forma segura
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+
+        // ==========================================
+        // VARIABLES GLOBALES Y ESTADO
+        // ==========================================
+        let scene, camera, renderer, controls;
+        let terrainMesh = null;
+        let wireframeMesh = null;
+        let baseRing = null;
+        let centerPin = null;
+
+        const state = {
+            lat: -31.4201,
+            lon: -64.1888,
+            locationName: "Córdoba, Argentina",
+            radiusKm: 50,
+            gridSize: 128, // Resolución fija alta (128x128) para preservar alturas reales de montañas sin achatarlas
+            exaggeration: 2.5,
+            palette: 'opentopomap',
+            showWireframe: false,
+            circularClip: true,
+            elevations: [],
+            gridPoints: [],
+            minElev: 0,
+            maxElev: 0,
+            centerElev: 0,
+            topoTexture: null
+        };
+
+        const SCENE_SCALE = 100; // Radio visual del círculo en unidades 3D
+
+        // ==========================================
+        // UTILIDADES DE INTERFAZ Y RED
+        // ==========================================
+        function showToast(msg, duration = 3500) {
+            const box = document.getElementById('toast-box');
+            const label = document.getElementById('toast-message');
+            if (!box || !label) return;
+            label.textContent = msg;
+            box.classList.remove('opacity-0');
+            box.classList.add('opacity-100');
+            clearTimeout(box._timer);
+            box._timer = setTimeout(() => {
+                box.classList.remove('opacity-100');
+                box.classList.add('opacity-0');
+            }, duration);
+        }
+
+        function setLoading(active, title = "Obteniendo Topografía", desc = "Procesando relieve...") {
+            const overlay = document.getElementById('status-overlay');
+            if (!overlay) return;
+            if (active) {
+                document.getElementById('status-title').textContent = title;
+                document.getElementById('status-desc').textContent = desc;
+                overlay.classList.remove('hidden');
+            } else {
+                overlay.classList.add('hidden');
+            }
+        }
+
+        async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const res = await fetch(url, { ...options, signal: controller.signal });
+                clearTimeout(id);
+                return res;
+            } catch (err) {
+                clearTimeout(id);
+                throw err;
+            }
+        }
+
+        function updateRadiusLabels() {
+            const r = state.radiusKm;
+            const badge = document.getElementById('header-radius-badge');
+            const valLabel = document.getElementById('val-radius');
+            const toggleLabel = document.getElementById('label-circular-toggle');
+            if (badge) badge.textContent = `Radio ${r} km`;
+            if (valLabel) valLabel.textContent = `${r} km`;
+            if (toggleLabel) toggleLabel.textContent = `Recorte Circular (Radio ${r}km)`;
+        }
+
+        // ==========================================
+        // INICIALIZACIÓN DE THREE.JS
+        // ==========================================
+        function initThreeJS() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0b1120);
+            scene.fog = new THREE.FogExp2(0x0b1120, 0.0014);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.5, 2500);
+            camera.position.set(0, 145, 195);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.innerHTML = '';
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.06;
+            controls.maxPolarAngle = Math.PI / 2 - 0.02;
+            controls.minDistance = 25;
+            controls.maxDistance = 600;
+
+            // Iluminación
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.72);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xfffbeb, 0.75);
+            dirLight.position.set(120, 220, 100);
+            scene.add(dirLight);
+
+            const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.25);
+            fillLight.position.set(-120, 80, -100);
+            scene.add(fillLight);
+
+            // Grilla de referencia sutil en la base
+            const gridHelper = new THREE.GridHelper(320, 32, 0x1e293b, 0x0f172a);
+            gridHelper.position.y = -2;
+            scene.add(gridHelper);
+
+            // Anillo delimitador del radio en km
+            const ringGeo = new THREE.RingGeometry(SCENE_SCALE - 0.6, SCENE_SCALE + 0.6, 128);
+            ringGeo.rotateX(-Math.PI / 2);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+            baseRing = new THREE.Mesh(ringGeo, ringMat);
+            baseRing.position.y = -0.5;
+            scene.add(baseRing);
+
+            // Marcador central (Pin de ubicación actual)
+            const pinGroup = new THREE.Group();
+            const poleGeo = new THREE.CylinderGeometry(0.35, 0.35, 16, 12);
+            const poleMat = new THREE.MeshBasicMaterial({ color: 0xf43f5e });
+            const pole = new THREE.Mesh(poleGeo, poleMat);
+            pole.position.y = 8;
+
+            const headGeo = new THREE.SphereGeometry(2.1, 16, 16);
+            const headMat = new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0xbe123c, roughness: 0.3 });
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.position.y = 16;
+
+            pinGroup.add(pole, head);
+            centerPin = pinGroup;
+            scene.add(centerPin);
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        // ==========================================
+        // MATEMÁTICA GEOGRÁFICA Y TESELAS DEM / OPENTOPOMAP
+        // ==========================================
+        function generateGridCoordinates(centerLat, centerLon, radiusKm, size) {
+            const points = [];
+            const latDegPerKm = 1 / 110.574;
+            const lonDegPerKm = 1 / (111.320 * Math.cos(centerLat * Math.PI / 180));
+
+            for (let row = 0; row < size; row++) {
+                const normZ = (row / (size - 1)) * 2 - 1; // -1 (Norte) a +1 (Sur)
+                const distNorthKm = -normZ * radiusKm;
+                const lat = centerLat + (distNorthKm * latDegPerKm);
+
+                for (let col = 0; col < size; col++) {
+                    const normX = (col / (size - 1)) * 2 - 1; // -1 (Oeste) a +1 (Este)
+                    const distEastKm = normX * radiusKm;
+                    const lon = centerLon + (distEastKm * lonDegPerKm);
+                    const distFromCenterKm = Math.sqrt(distEastKm * distEastKm + distNorthKm * distNorthKm);
+
+                    points.push({
+                        lat,
+                        lon,
+                        normX,
+                        normZ,
+                        distKm: distFromCenterKm,
+                        insideRadius: distFromCenterKm <= radiusKm
+                    });
+                }
+            }
+            return points;
+        }
+
+        function latLonToTileFraction(lat, lon, zoom) {
+            const n = Math.pow(2, zoom);
+            const x = ((lon + 180) / 360) * n;
+            const latRad = lat * Math.PI / 180;
+            const y = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
+            return { x, y };
+        }
+
+        function loadImageCORS(url) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.crossOrigin = "Anonymous";
+                img.onload = () => resolve(img);
+                img.onerror = () => resolve(null);
+                img.src = url;
+            });
+        }
+
+        // Descarga y ensambla el trozo del mapa visual de OpenTopoMap para la zona seleccionada
+        async function fetchOpenTopoMapTexture(centerLat, centerLon, radiusKm) {
+            try {
+                // Elegir zoom óptimo según el radio en km para mantener nitidez y velocidad
+                let zoom = 11;
+                if (radiusKm <= 12) zoom = 13;
+                else if (radiusKm <= 25) zoom = 12;
+                else if (radiusKm <= 65) zoom = 11;
+                else if (radiusKm <= 110) zoom = 10;
+                else zoom = 9;
+
+                const latDegPerKm = 1 / 110.574;
+                const lonDegPerKm = 1 / (111.320 * Math.cos(centerLat * Math.PI / 180));
+
+                const northLat = centerLat + radiusKm * latDegPerKm;
+                const southLat = centerLat - radiusKm * latDegPerKm;
+                const westLon = centerLon - radiusKm * lonDegPerKm;
+                const eastLon = centerLon + radiusKm * lonDegPerKm;
+
+                const topLeft = latLonToTileFraction(northLat, westLon, zoom);
+                const bottomRight = latLonToTileFraction(southLat, eastLon, zoom);
+
+                const minTx = Math.floor(topLeft.x);
+                const maxTx = Math.floor(bottomRight.x);
+                const minTy = Math.floor(topLeft.y);
+                const maxTy = Math.floor(bottomRight.y);
+
+                const tileSize = 256;
+                const tilesX = Math.max(1, maxTx - minTx + 1);
+                const tilesY = Math.max(1, maxTy - minTy + 1);
+
+                const fullCanvas = document.createElement('canvas');
+                fullCanvas.width = tilesX * tileSize;
+                fullCanvas.height = tilesY * tileSize;
+                const fctx = fullCanvas.getContext('2d');
+                fctx.fillStyle = '#1e293b';
+                fctx.fillRect(0, 0, fullCanvas.width, fullCanvas.height);
+
+                const subdomains = ['a', 'b', 'c'];
+                const promises = [];
+
+                for (let ty = minTy; ty <= maxTy; ty++) {
+                    for (let tx = minTx; tx <= maxTx; tx++) {
+                        const sub = subdomains[(tx + ty) % subdomains.length];
+                        const url = `https://${sub}.tile.opentopomap.org/${zoom}/${tx}/${ty}.png`;
+                        promises.push(
+                            loadImageCORS(url).then(img => {
+                                if (img) {
+                                    fctx.drawImage(img, (tx - minTx) * tileSize, (ty - minTy) * tileSize);
+                                }
+                            })
+                        );
+                    }
+                }
+
+                await Promise.all(promises);
+
+                // Recortar exactamente el cuadrado correspondiente al radio en km
+                const cropX = (topLeft.x - minTx) * tileSize;
+                const cropY = (topLeft.y - minTy) * tileSize;
+                const cropW = Math.max(1, (bottomRight.x - topLeft.x) * tileSize);
+                const cropH = Math.max(1, (bottomRight.y - topLeft.y) * tileSize);
+
+                const outCanvas = document.createElement('canvas');
+                outCanvas.width = 1024;
+                outCanvas.height = 1024;
+                const octx = outCanvas.getContext('2d');
+                octx.drawImage(fullCanvas, cropX, cropY, cropW, cropH, 0, 0, 1024, 1024);
+
+                const tex = new THREE.CanvasTexture(outCanvas);
+                tex.anisotropy = 4;
+                return tex;
+            } catch (e) {
+                console.warn("No se pudo cargar textura OpenTopoMap, usando colores hipsométricos:", e);
+                return null;
+            }
+        }
+
+        // Obtiene alturas reales DEM (AWS Terrarium SRTM) y proyecta el mapa en 3D
+        async function fetchElevationData(centerLat, centerLon, size) {
+            setLoading(true, `Recortando Zona (${state.radiusKm} km)`, "Descargando relieve topográfico y mapa...");
+            document.getElementById('location-label').textContent = state.locationName;
+
+            const grid = generateGridCoordinates(centerLat, centerLon, state.radiusKm, size);
+            state.gridPoints = grid;
+            const totalPoints = grid.length;
+            const elevations = new Float32Array(totalPoints);
+
+            // Cargar textura visual de OpenTopoMap en paralelo
+            const topoTexturePromise = fetchOpenTopoMapTexture(centerLat, centerLon, state.radiusKm);
+
+            try {
+                // Zoom 11-12 en AWS Terrarium DEM ofrece alta resolución (~30-70m por píxel)
+                let zoom = 11;
+                if (state.radiusKm <= 25) zoom = 12;
+                else if (state.radiusKm > 90) zoom = 10;
+
+                const latDegPerKm = 1 / 110.574;
+                const lonDegPerKm = 1 / (111.320 * Math.cos(centerLat * Math.PI / 180));
+
+                const northLat = centerLat + state.radiusKm * latDegPerKm;
+                const southLat = centerLat - state.radiusKm * latDegPerKm;
+                const westLon = centerLon - state.radiusKm * lonDegPerKm;
+                const eastLon = centerLon + state.radiusKm * lonDegPerKm;
+
+                const topLeft = latLonToTileFraction(northLat, westLon, zoom);
+                const bottomRight = latLonToTileFraction(southLat, eastLon, zoom);
+
+                const minTx = Math.floor(topLeft.x);
+                const maxTx = Math.floor(bottomRight.x);
+                const minTy = Math.floor(topLeft.y);
+                const maxTy = Math.floor(bottomRight.y);
+
+                const tileSize = 256;
+                const width = Math.max(1, maxTx - minTx + 1) * tileSize;
+                const height = Math.max(1, maxTy - minTy + 1) * tileSize;
+
+                const demCanvas = document.createElement('canvas');
+                demCanvas.width = width;
+                demCanvas.height = height;
+                const ctx = demCanvas.getContext('2d', { willReadFrequently: true });
+
+                const tilePromises = [];
+                for (let ty = minTy; ty <= maxTy; ty++) {
+                    for (let tx = minTx; tx <= maxTx; tx++) {
+                        const url = `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${zoom}/${tx}/${ty}.png`;
+                        tilePromises.push(
+                            loadImageCORS(url).then(img => {
+                                if (img) {
+                                    ctx.drawImage(img, (tx - minTx) * tileSize, (ty - minTy) * tileSize);
+                                }
+                            })
+                        );
+                    }
+                }
+
+                await Promise.all(tilePromises);
+                const imgData = ctx.getImageData(0, 0, width, height);
+                const pixels = imgData.data;
+
+                let validSamples = 0;
+
+                for (let i = 0; i < totalPoints; i++) {
+                    const pt = grid[i];
+                    const tf = latLonToTileFraction(pt.lat, pt.lon, zoom);
+                    const cx = Math.min(width - 1, Math.max(0, Math.round((tf.x - minTx) * tileSize)));
+                    const cy = Math.min(height - 1, Math.max(0, Math.round((tf.y - minTy) * tileSize)));
+
+                    // Tomar el pico máximo en una vecindad de 3x3 píxeles para preservar cumbres reales (ej. Aconcagua)
+                    let peakElev = -Infinity;
+                    let foundPixel = false;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            const px = Math.min(width - 1, Math.max(0, cx + dx));
+                            const py = Math.min(height - 1, Math.max(0, cy + dy));
+                            const idx = (py * width + px) * 4;
+                            const a = pixels[idx + 3];
+                            if (a > 0) {
+                                const elevMeters = (pixels[idx] * 256 + pixels[idx + 1] + pixels[idx + 2] / 256) - 32768;
+                                if (elevMeters > peakElev) peakElev = elevMeters;
+                                foundPixel = true;
+                            }
+                        }
+                    }
+
+                    if (foundPixel) {
+                        elevations[i] = Math.max(-500, peakElev);
+                        validSamples++;
+                    }
+                }
+
+                if (validSamples < totalPoints * 0.2) {
+                    throw new Error("Teselas DEM insuficientes");
+                }
+
+                state.elevations = elevations;
+            } catch (err) {
+                console.warn("Respaldo procedural activado:", err);
+                showToast("Usando relieve de respaldo por conexión limitada.");
+                for (let i = 0; i < totalPoints; i++) {
+                    const pt = grid[i];
+                    const n1 = Math.sin(pt.lat * 18) * Math.cos(pt.lon * 18) * 350;
+                    const n2 = Math.sin(pt.lat * 45 + 1.2) * Math.sin(pt.lon * 45) * 140;
+                    elevations[i] = Math.max(10, 450 + n1 + n2);
+                }
+                state.elevations = elevations;
+            }
+
+            state.topoTexture = await topoTexturePromise;
+
+            // Calcular estadísticas reales dentro del círculo de radio seleccionado
+            let min = Infinity, max = -Infinity;
+            for (let i = 0; i < totalPoints; i++) {
+                if (state.circularClip && !grid[i].insideRadius) continue;
+                const e = elevations[i];
+                if (e < min) min = e;
+                if (e > max) max = e;
+            }
+            const centerIdx = Math.floor(size / 2) * size + Math.floor(size / 2);
+            state.minElev = min === Infinity ? 0 : min;
+            state.maxElev = max === -Infinity ? 100 : max;
+            state.centerElev = elevations[centerIdx] || 0;
+
+            document.getElementById('stat-min').textContent = `${Math.round(state.minElev)} m`;
+            document.getElementById('stat-center').textContent = `${Math.round(state.centerElev)} m`;
+            document.getElementById('stat-max').textContent = `${Math.round(state.maxElev)} m`;
+
+            buildTerrainMesh();
+            setLoading(false);
+        }
+
+        // ==========================================
+        // CONSTRUCCIÓN DE LA MALLA 3D EN THREE.JS
+        // ==========================================
+        function getHypsometricColor(t, palette) {
+            const c = new THREE.Color();
+            if (palette === 'cyber') {
+                c.setHSL(0.55 - t * 0.45, 0.85, 0.25 + t * 0.45);
+            } else if (palette === 'monochrome') {
+                const l = 0.25 + t * 0.65;
+                c.setRGB(l, l, l * 1.03);
+            } else {
+                // Hipsométrico natural: verde valle -> amarillo -> marrón montaña -> blanco nieve
+                if (t < 0.25) c.setRGB(0.18 + t * 0.8, 0.48 + t * 0.6, 0.24);
+                else if (t < 0.55) c.setRGB(0.45 + (t - 0.25) * 1.1, 0.62 - (t - 0.25) * 0.4, 0.22);
+                else if (t < 0.82) c.setRGB(0.58 - (t - 0.55) * 0.4, 0.42 - (t - 0.55) * 0.3, 0.28);
+                else c.setRGB(0.85 + (t - 0.82) * 0.8, 0.85 + (t - 0.82) * 0.8, 0.88 + (t - 0.82) * 0.6);
+            }
+            return c;
+        }
+
+        function buildTerrainMesh() {
+            if (!scene || !state.elevations || state.elevations.length === 0) return;
+
+            if (terrainMesh) {
+                scene.remove(terrainMesh);
+                terrainMesh.geometry.dispose();
+                terrainMesh.material.dispose();
+                terrainMesh = null;
+            }
+            if (wireframeMesh) {
+                scene.remove(wireframeMesh);
+                wireframeMesh.geometry.dispose();
+                wireframeMesh.material.dispose();
+                wireframeMesh = null;
+            }
+
+            const size = state.gridSize;
+            const total = size * size;
+            const positions = new Float32Array(total * 3);
+            const uvs = new Float32Array(total * 2);
+            const colors = new Float32Array(total * 3);
+
+            // Escala física real proporcional al radio elegido (en metros)
+            const radiusMeters = state.radiusKm * 1000;
+            const metersPerUnit = radiusMeters / SCENE_SCALE;
+            const elevSpan = Math.max(1, state.maxElev - state.minElev);
+
+            for (let row = 0; row < size; row++) {
+                for (let col = 0; col < size; col++) {
+                    const idx = row * size + col;
+                    const pt = state.gridPoints[idx];
+                    const elev = state.elevations[idx];
+
+                    const x = pt.normX * SCENE_SCALE;
+                    const z = pt.normZ * SCENE_SCALE;
+                    const y = Math.max(0, (elev - state.minElev) / metersPerUnit) * state.exaggeration;
+
+                    positions[idx * 3] = x;
+                    positions[idx * 3 + 1] = y;
+                    positions[idx * 3 + 2] = z;
+
+                    uvs[idx * 2] = col / (size - 1);
+                    uvs[idx * 2 + 1] = 1 - (row / (size - 1));
+
+                    const t = Math.min(1, Math.max(0, (elev - state.minElev) / elevSpan));
+                    const c = getHypsometricColor(t, state.palette);
+                    colors[idx * 3] = c.r;
+                    colors[idx * 3 + 1] = c.g;
+                    colors[idx * 3 + 2] = c.b;
+                }
+            }
+
+            const indices = [];
+            for (let row = 0; row < size - 1; row++) {
+                for (let col = 0; col < size - 1; col++) {
+                    const a = row * size + col;
+                    const b = a + 1;
+                    const c = (row + 1) * size + col;
+                    const d = c + 1;
+
+                    if (state.circularClip) {
+                        const insideCount =
+                            (state.gridPoints[a].insideRadius ? 1 : 0) +
+                            (state.gridPoints[b].insideRadius ? 1 : 0) +
+                            (state.gridPoints[c].insideRadius ? 1 : 0) +
+                            (state.gridPoints[d].insideRadius ? 1 : 0);
+                        if (insideCount < 3) continue;
+                    }
+
+                    indices.push(a, c, b);
+                    indices.push(b, c, d);
+                }
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setIndex(indices);
+            geometry.computeVertexNormals();
+
+            let material;
+            if (state.palette === 'opentopomap' && state.topoTexture) {
+                material = new THREE.MeshStandardMaterial({
+                    map: state.topoTexture,
+                    roughness: 0.85,
+                    metalness: 0.05,
+                    side: THREE.DoubleSide
+                });
+            } else {
+                material = new THREE.MeshStandardMaterial({
+                    vertexColors: true,
+                    roughness: 0.78,
+                    metalness: 0.08,
+                    side: THREE.DoubleSide
+                });
+            }
+
+            terrainMesh = new THREE.Mesh(geometry, material);
+            scene.add(terrainMesh);
+
+            // Malla wireframe opcional
+            const wireMat = new THREE.MeshBasicMaterial({
+                color: 0x38bdf8,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.22
+            });
+            wireframeMesh = new THREE.Mesh(geometry, wireMat);
+            wireframeMesh.position.y = 0.08;
+            wireframeMesh.visible = state.showWireframe;
+            scene.add(wireframeMesh);
+
+            // Actualizar altura del pin central sobre el terreno
+            if (centerPin) {
+                const centerY = Math.max(0, (state.centerElev - state.minElev) / metersPerUnit) * state.exaggeration;
+                centerPin.position.set(0, centerY, 0);
+            }
+        }
+
+        // ==========================================
+        // GEOLOCALIZACIÓN Y BÚSQUEDA DE CIUDADES
+        // ==========================================
+        async function detectUserLocation() {
+            setLoading(true, "Detectando tu Ubicación", "Consultando GPS o red local...");
+            try {
+                const pos = await new Promise((resolve, reject) => {
+                    if (!navigator.geolocation) return reject(new Error("Sin GPS"));
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 6000,
+                        maximumAge: 60000
+                    });
+                });
+                state.lat = parseFloat(pos.coords.latitude.toFixed(5));
+                state.lon = parseFloat(pos.coords.longitude.toFixed(5));
+                state.locationName = `Tu Ubicación GPS (${state.lat.toFixed(3)}, ${state.lon.toFixed(3)})`;
+                document.getElementById('input-lat').value = state.lat;
+                document.getElementById('input-lon').value = state.lon;
+                await fetchElevationData(state.lat, state.lon, state.gridSize);
+                return;
+            } catch (gpsErr) {
+                console.warn("GPS no disponible, intentando ubicación por IP:", gpsErr);
+            }
+
+            // Respaldo automático por IP
+            try {
+                const res = await fetchWithTimeout('https://ipwho.is/', {}, 5000);
+                const data = await res.json();
+                if (data && data.success && data.latitude && data.longitude) {
+                    state.lat = parseFloat(data.latitude.toFixed(5));
+                    state.lon = parseFloat(data.longitude.toFixed(5));
+                    state.locationName = `${data.city || 'Tu Zona'}, ${data.country || ''}`;
+                    document.getElementById('input-lat').value = state.lat;
+                    document.getElementById('input-lon').value = state.lon;
+                    showToast(`Ubicación aproximada detectada: ${state.locationName}`);
+                    await fetchElevationData(state.lat, state.lon, state.gridSize);
+                    return;
+                }
+            } catch (ipErr) {
+                console.warn("Respaldo IP falló:", ipErr);
+            }
+
+            setLoading(false);
+            showToast("No se pudo detectar GPS. Busca tu ciudad en el panel derecho.");
+        }
+
+        async function searchCityByName() {
+            const input = document.getElementById('input-search-city');
+            const query = input.value.trim();
+            if (!query) {
+                showToast("Escribe el nombre de una ciudad o montaña.");
+                return;
+            }
+            setLoading(true, "Buscando Lugar", `Localizando "${query}"...`);
+            try {
+                const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+                const res = await fetchWithTimeout(url, { headers: { 'Accept-Language': 'es' } }, 6000);
+                const results = await res.json();
+                if (results && results.length > 0) {
+                    const place = results[0];
+                    state.lat = parseFloat(parseFloat(place.lat).toFixed(5));
+                    state.lon = parseFloat(parseFloat(place.lon).toFixed(5));
+                    state.locationName = place.display_name.split(',').slice(0, 2).join(',');
+                    document.getElementById('input-lat').value = state.lat;
+                    document.getElementById('input-lon').value = state.lon;
+                    await fetchElevationData(state.lat, state.lon, state.gridSize);
+                } else {
+                    setLoading(false);
+                    showToast("No se encontró ese lugar. Intenta con otro nombre.");
+                }
+            } catch (err) {
+                setLoading(false);
+                showToast("Error al buscar la ciudad. Revisa tu conexión.");
+            }
+        }
+
+        // ==========================================
+        // EVENTOS DE INTERFAZ DE USUARIO
+        // ==========================================
+        function setupUIEvents() {
+            // Botón Mi Ubicación
+            document.getElementById('btn-locate').addEventListener('click', detectUserLocation);
+
+            // Mostrar/Ocultar Panel
+            const panel = document.getElementById('control-panel');
+            document.getElementById('btn-toggle-panel').addEventListener('click', () => {
+                panel.classList.toggle('hidden');
+            });
+
+            // Buscar ciudad
+            document.getElementById('btn-search-city').addEventListener('click', searchCityByName);
+            document.getElementById('input-search-city').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') searchCityByName();
+            });
+
+            // Coordenadas manuales
+            document.getElementById('btn-generate-coords').addEventListener('click', () => {
+                const lat = parseFloat(document.getElementById('input-lat').value);
+                const lon = parseFloat(document.getElementById('input-lon').value);
+                if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+                    showToast("Coordenadas inválidas.");
+                    return;
+                }
+                state.lat = lat;
+                state.lon = lon;
+                state.locationName = `Coordenadas (${lat.toFixed(3)}, ${lon.toFixed(3)})`;
+                fetchElevationData(state.lat, state.lon, state.gridSize);
+            });
+
+            // Selector de ejemplos
+            document.getElementById('preset-locations').addEventListener('change', (e) => {
+                if (!e.target.value) return;
+                const [latStr, lonStr] = e.target.value.split(',');
+                state.lat = parseFloat(latStr);
+                state.lon = parseFloat(lonStr);
+                state.locationName = e.target.options[e.target.selectedIndex].text;
+                document.getElementById('input-lat').value = state.lat;
+                document.getElementById('input-lon').value = state.lon;
+                fetchElevationData(state.lat, state.lon, state.gridSize);
+            });
+
+            // Slider Radio en kilómetros (5 km a 150 km)
+            const sliderRadius = document.getElementById('slider-radius');
+            sliderRadius.addEventListener('input', (e) => {
+                state.radiusKm = parseInt(e.target.value, 10);
+                updateRadiusLabels();
+            });
+            sliderRadius.addEventListener('change', (e) => {
+                state.radiusKm = parseInt(e.target.value, 10);
+                updateRadiusLabels();
+                fetchElevationData(state.lat, state.lon, state.gridSize);
+            });
+
+            // Slider Exageración Vertical
+            const sliderExag = document.getElementById('slider-exaggeration');
+            sliderExag.addEventListener('input', (e) => {
+                state.exaggeration = parseFloat(e.target.value);
+                document.getElementById('val-exaggeration').textContent = `${state.exaggeration.toFixed(1)}x`;
+                buildTerrainMesh();
+            });
+
+            // Paletas de color
+            document.querySelectorAll('.palette-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.palette-btn').forEach(b => {
+                        b.classList.remove('active', 'bg-sky-500/20', 'border-sky-500', 'text-sky-300');
+                        b.classList.add('bg-slate-800/60', 'border-slate-700', 'text-slate-400');
+                    });
+                    btn.classList.add('active', 'bg-sky-500/20', 'border-sky-500', 'text-sky-300');
+                    btn.classList.remove('bg-slate-800/60', 'border-slate-700', 'text-slate-400');
+
+                    state.palette = btn.dataset.palette;
+                    buildTerrainMesh();
+                });
+            });
+
+            // Toggle Wireframe
+            document.getElementById('toggle-wireframe').addEventListener('change', (e) => {
+                state.showWireframe = e.target.checked;
+                if (wireframeMesh) wireframeMesh.visible = state.showWireframe;
+            });
+
+            // Toggle Recorte Circular
+            document.getElementById('toggle-circular').addEventListener('change', (e) => {
+                state.circularClip = e.target.checked;
+                buildTerrainMesh();
+            });
+
+            // Botón exportar OBJ
+            document.getElementById('btn-export-obj').addEventListener('click', exportToOBJ);
+        }
+
+        // ==========================================
+        // EXPORTAR MALLA A ARCHIVO .OBJ (3D)
+        // ==========================================
+        function exportToOBJ() {
+            if (!terrainMesh) {
+                showToast("Aún no hay una malla generada para exportar.");
+                return;
+            }
+            try {
+                const geo = terrainMesh.geometry;
+                const pos = geo.attributes.position;
+                const index = geo.index;
+
+                let objContent = `# TopoGen 3D - Radio ${state.radiusKm}km (${state.lat}, ${state.lon})\n`;
+                objContent += `o Terreno_${state.radiusKm}km\n`;
+
+                for (let i = 0; i < pos.count; i++) {
+                    objContent += `v ${pos.getX(i).toFixed(4)} ${pos.getY(i).toFixed(4)} ${pos.getZ(i).toFixed(4)}\n`;
+                }
+
+                if (index) {
+                    const arr = index.array;
+                    for (let i = 0; i < arr.length; i += 3) {
+                        objContent += `f ${arr[i] + 1} ${arr[i + 1] + 1} ${arr[i + 2] + 1}\n`;
+                    }
+                } else {
+                    for (let i = 0; i < pos.count; i += 3) {
+                        objContent += `f ${i + 1} ${i + 2} ${i + 3}\n`;
+                    }
+                }
+
+                const blob = new Blob([objContent], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `topografia_${state.radiusKm}km_${state.lat.toFixed(2)}_${state.lon.toFixed(2)}.obj`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast("Archivo .OBJ descargado correctamente.");
+            } catch (err) {
+                console.error(err);
+                showToast("No se pudo exportar el archivo .OBJ.");
+            }
+        }
+
+        // ==========================================
+        // BUCLE DE ANIMACIÓN Y ARRANQUE
+        // ==========================================
+        function animate() {
+            requestAnimationFrame(animate);
+            if (controls) controls.update();
+            if (renderer && scene && camera) renderer.render(scene, camera);
+        }
+
+        function bootApp() {
+            try {
+                if (typeof THREE === 'undefined') {
+                    showToast("Error cargando librería 3D. Revisa tu conexión a internet.");
+                    return;
+                }
+                initThreeJS();
+                setupUIEvents();
+                animate();
+                fetchElevationData(state.lat, state.lon, state.gridSize);
+            } catch (err) {
+                console.error("Error iniciando aplicación:", err);
+                setLoading(false);
+                showToast("Error al iniciar el motor 3D: " + err.message);
+            }
+        }
+
+        if (document.readyState === 'complete') {
+            bootApp();
+        } else {
+            window.addEventListener('load', bootApp);
+        }
+    </script>
+</body>
+</html>
